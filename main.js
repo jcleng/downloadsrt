@@ -355,11 +355,76 @@ function sendAppError(response, error) {
   sendJson(response, status, { error: code, message });
 }
 
+const CORS_DEFAULT_MAX_AGE = 86400;
+const CORS_EXPOSED_HEADERS = 'content-disposition, content-length, content-type';
+
+function resolveCorsPolicy(value) {
+  const text = value === undefined || value === null ? '*' : String(value).trim();
+  if (!text) {
+    return { wildcard: true, origins: new Set() };
+  }
+
+  const origins = new Set(
+    text.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+  );
+
+  if (origins.has('*')) {
+    return { wildcard: true, origins: new Set() };
+  }
+
+  return { wildcard: false, origins };
+}
+
+function applyCorsHeaders(request, response, policy) {
+  const origin = request.headers.origin;
+
+  if (policy.wildcard) {
+    response.setHeader('access-control-allow-origin', '*');
+  } else if (origin && policy.origins.has(String(origin).toLowerCase())) {
+    response.setHeader('access-control-allow-origin', origin);
+    response.setHeader('vary', 'Origin');
+  }
+
+  response.setHeader('access-control-expose-headers', CORS_EXPOSED_HEADERS);
+}
+
+function sendPreflight(request, response, policy) {
+  applyCorsHeaders(request, response, policy);
+  response.setHeader('access-control-allow-methods', 'GET, HEAD, OPTIONS');
+
+  const requestedHeaders = request.headers['access-control-request-headers'];
+  response.setHeader(
+    'access-control-allow-headers',
+    requestedHeaders || 'content-type'
+  );
+
+  const configuredMaxAge = Number(policy.maxAge ?? process.env.CORS_MAX_AGE ?? CORS_DEFAULT_MAX_AGE);
+  const maxAge = Number.isFinite(configuredMaxAge) && configuredMaxAge > 0
+    ? Math.floor(configuredMaxAge)
+    : CORS_DEFAULT_MAX_AGE;
+  response.setHeader('access-control-max-age', String(maxAge));
+
+  response.writeHead(204, { 'content-length': '0' });
+  response.end();
+}
+
 export function createApp(options = {}) {
+  const corsPolicy = resolveCorsPolicy(options.corsOrigin ?? process.env.CORS_ORIGIN);
+  if (options.corsMaxAge !== undefined) {
+    corsPolicy.maxAge = options.corsMaxAge;
+  }
+
   return createServer(async (request, response) => {
     try {
-      if (request.method !== 'GET') {
-        response.setHeader('allow', 'GET');
+      applyCorsHeaders(request, response, corsPolicy);
+
+      if (request.method === 'OPTIONS') {
+        sendPreflight(request, response, corsPolicy);
+        return;
+      }
+
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        response.setHeader('allow', 'GET, HEAD, OPTIONS');
         sendJson(response, 405, { error: 'METHOD_NOT_ALLOWED', message: 'Only GET is supported' });
         return;
       }

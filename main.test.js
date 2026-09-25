@@ -471,6 +471,91 @@ test('下载路由接受 .srt 后缀并保留旧格式', async () => {
   }
 });
 
+test('跨域预检和响应头支持浏览器调用', async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'assrt-cors-'));
+  const server = createApp({
+    cacheDir,
+    fetchImpl: async () => new Response('[]')
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    const preflight = await fetch(`${baseUrl}/search`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://example.com',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'content-type'
+      }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+    assert.match(preflight.headers.get('access-control-allow-methods'), /GET/);
+    assert.match(preflight.headers.get('access-control-allow-headers'), /content-type/i);
+    assert.ok(Number(preflight.headers.get('access-control-max-age')) > 0);
+    assert.equal(preflight.headers.get('access-control-allow-credentials'), null);
+
+    const search = await fetch(`${baseUrl}/search?q=abc`, { headers: { origin: 'https://example.com' } });
+    assert.equal(search.status, 200);
+    assert.equal(search.headers.get('access-control-allow-origin'), '*');
+    assert.match(search.headers.get('access-control-expose-headers'), /content-disposition/i);
+
+    const notFound = await fetch(`${baseUrl}/missing`, { headers: { origin: 'https://example.com' } });
+    assert.equal(notFound.status, 404);
+    assert.equal(notFound.headers.get('access-control-allow-origin'), '*');
+
+    const badRequest = await fetch(`${baseUrl}/search`, { headers: { origin: 'https://example.com' } });
+    assert.equal(badRequest.status, 400);
+    assert.equal(badRequest.headers.get('access-control-allow-origin'), '*');
+
+    const notAllowed = await fetch(`${baseUrl}/search`, { method: 'DELETE', headers: { origin: 'https://example.com' } });
+    assert.equal(notAllowed.status, 405);
+    assert.equal(notAllowed.headers.get('access-control-allow-origin'), '*');
+    assert.match(notAllowed.headers.get('allow'), /OPTIONS/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('跨域白名单只放行配置的来源', async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'assrt-cors-list-'));
+  const server = createApp({
+    cacheDir,
+    corsOrigin: 'https://allowed.example, https://other.example',
+    fetchImpl: async () => new Response('[]')
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    const allowed = await fetch(`${baseUrl}/search?q=abc`, { headers: { origin: 'https://allowed.example' } });
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://allowed.example');
+    assert.match(allowed.headers.get('vary') || '', /origin/i);
+
+    const other = await fetch(`${baseUrl}/search?q=abc`, { headers: { origin: 'https://other.example' } });
+    assert.equal(other.headers.get('access-control-allow-origin'), 'https://other.example');
+
+    const blocked = await fetch(`${baseUrl}/search?q=abc`, { headers: { origin: 'https://evil.example' } });
+    assert.equal(blocked.status, 200);
+    assert.equal(blocked.headers.get('access-control-allow-origin'), null);
+
+    const blockedPreflight = await fetch(`${baseUrl}/search`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://evil.example', 'access-control-request-method': 'GET' }
+    });
+    assert.equal(blockedPreflight.status, 204);
+    assert.equal(blockedPreflight.headers.get('access-control-allow-origin'), null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test('HTTP API 返回参数和上游错误状态', async () => {
   const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'assrt-errors-'));
   const server = createApp({
