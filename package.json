@@ -1,0 +1,23 @@
+{
+  "name": "assrt-subtitle-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "node --test",
+    "check": "node --check main.js && node --test"
+  },
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "dependencies": {
+    "chardet": "2.2.0",
+    "cheerio": "1.2.0",
+    "iconv-lite": "0.7.3",
+    "node-unrar-js": "2.0.2",
+    "undici": "^7.30.0",
+    "yauzl": "^3.4.0"
+  }
+}

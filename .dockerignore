@@ -1,0 +1,9 @@
+node_modules
+.cache
+.git
+.gitignore
+.vscode
+*.log
+Dockerfile
+.dockerignore
+http.http
