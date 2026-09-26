@@ -1,4 +1,6 @@
 ### 搜索
-GET https://srt.j-c-leng.workers.dev/search?q=钢铁侠
+GET http://127.0.0.1:4000/search?q=钢铁侠
+### 搜索(第2页, page 取 1-100 的整数, 缺省 1, 非法值返回 400)
+GET http://127.0.0.1:4000/search?q=恐怖游轮&page=3
 ### 获取srt
-GET https://srt.j-c-leng.workers.dev/download/692356.srt
+GET http://127.0.0.1:4000/download/646852.srt

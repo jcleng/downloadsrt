@@ -11,6 +11,7 @@ import {
   downloadSubtitle,
   extractDownloadUrl,
   extractFirstSrt,
+  normalizeSearchPage,
   parseSearchResults,
   searchSubtitles
 } from './main.js';
@@ -229,6 +230,71 @@ test('搜索请求只访问 ASSRT 搜索首页', async () => {
     detailUrl: 'https://assrt.net/sub/646205/a.html'
   }]);
   assert.deepEqual(requested, ['https://assrt.net/sub/?searchword=%E9%92%A2%E9%93%81%E4%BE%A0']);
+});
+
+test('搜索分页参数透传到上游 page', async () => {
+  const requested = [];
+  const fetchImpl = async (url) => {
+    requested.push(String(url));
+    return new Response('<div class="resultcard"></div>');
+  };
+
+  await searchSubtitles('恐怖游轮', { fetchImpl }, 2);
+  assert.deepEqual(requested, ['https://assrt.net/sub/?searchword=%E6%81%90%E6%80%96%E6%B8%B8%E8%BD%AE&page=2']);
+
+  requested.length = 0;
+  await searchSubtitles('恐怖游轮', { fetchImpl }, 1);
+  assert.deepEqual(requested, ['https://assrt.net/sub/?searchword=%E6%81%90%E6%80%96%E6%B8%B8%E8%BD%AE']);
+
+  requested.length = 0;
+  await searchSubtitles('恐怖游轮', { fetchImpl });
+  assert.deepEqual(requested, ['https://assrt.net/sub/?searchword=%E6%81%90%E6%80%96%E6%B8%B8%E8%BD%AE']);
+});
+
+test('分页参数缺省为 1，越界返回 400', () => {
+  assert.equal(normalizeSearchPage(undefined), 1);
+  assert.equal(normalizeSearchPage(null), 1);
+  assert.equal(normalizeSearchPage(''), 1);
+  assert.equal(normalizeSearchPage(' 7 '), 7);
+  assert.equal(normalizeSearchPage(100), 100);
+
+  for (const invalid of ['0', '101', '-1', '1.5', 'abc', '2e3', ' ', '0x2', Number.NaN, Infinity]) {
+    assert.throws(
+      () => normalizeSearchPage(invalid),
+      (error) => error.status === 400 && error.code === 'INVALID_PAGE',
+      `page=${String(invalid)} 应该被拒绝`
+    );
+  }
+});
+
+test('HTTP 搜索路由校验分页参数', async () => {
+  const requested = [];
+  const fetchImpl = async (url) => {
+    requested.push(String(url));
+    return new Response('<div class="resultcard"></div>');
+  };
+  const server = createApp({ fetchImpl });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const query = encodeURIComponent('恐怖游轮');
+
+    assert.equal((await fetch(`${baseUrl}/search?q=${query}&page=2`)).status, 200);
+    assert.equal((await fetch(`${baseUrl}/search?q=${query}`)).status, 200);
+
+    const invalid = await fetch(`${baseUrl}/search?q=${query}&page=101`);
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error, 'INVALID_PAGE');
+
+    assert.deepEqual(requested, [
+      `https://assrt.net/sub/?searchword=${query}&page=2`,
+      `https://assrt.net/sub/?searchword=${query}`
+    ]);
+  } finally {
+    server.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('默认请求使用环境代理调度器', async () => {

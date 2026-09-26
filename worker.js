@@ -2829,13 +2829,33 @@ export async function downloadSubtitle(id, options = {}) {
   }
 }
 
-export async function searchSubtitles(query, options = {}) {
+const MAX_SEARCH_PAGE = 100;
+
+export function normalizeSearchPage(value) {
+  if (value === undefined || value === null || value === '') return 1;
+
+  const text = String(value).trim();
+  if (!/^\d+$/u.test(text)) {
+    throw new AppError(400, 'INVALID_PAGE', 'page must be an integer between 1 and 100');
+  }
+
+  const page = Number(text);
+  if (!Number.isSafeInteger(page) || page < 1 || page > MAX_SEARCH_PAGE) {
+    throw new AppError(400, 'INVALID_PAGE', 'page must be an integer between 1 and 100');
+  }
+
+  return page;
+}
+
+export async function searchSubtitles(query, options = {}, page = 1) {
   if (typeof query !== 'string' || !query.trim() || query.length > 100) {
     throw new AppError(400, 'INVALID_QUERY', 'q must be between 1 and 100 characters');
   }
 
+  const currentPage = normalizeSearchPage(page);
   const url = new URL('/sub/', ASSRT_ORIGIN);
   url.searchParams.set('searchword', query.trim());
+  if (currentPage > 1) url.searchParams.set('page', String(currentPage));
   const html = decodeSubtitle(await fetchBuffer(url, options, MAX_PAGE_BYTES));
   const results = parseSearchResults(html);
 
@@ -2949,7 +2969,8 @@ async function handleRequest(request, env, ctx) {
   const requestUrl = new URL(request.url);
 
   if (requestUrl.pathname === '/search') {
-    const results = await searchSubtitles(requestUrl.searchParams.get('q'), options);
+    const page = normalizeSearchPage(requestUrl.searchParams.get('page'));
+    const results = await searchSubtitles(requestUrl.searchParams.get('q'), options, page);
     return jsonResponse(200, results, corsHeaders);
   }
 
