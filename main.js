@@ -128,6 +128,7 @@ async function readResponseBuffer(response, maxBytes) {
 
 async function fetchBuffer(value, options, maxBytes) {
   let url = toSecureUrl(assertAllowedUrl(value));
+  console.log("url", url);
   const fetchImpl = options.fetchImpl || undiciFetch;
   const dispatcher = options.dispatcher ?? getProxyDispatcher();
   const controller = new AbortController();
@@ -172,6 +173,7 @@ async function fetchBuffer(value, options, maxBytes) {
 
     throw new AppError(502, 'TOO_MANY_REDIRECTS', 'Upstream redirected too many times');
   } catch (error) {
+    console.log("error", error);
     if (error instanceof AppError) {
       throw error;
     }
