@@ -1,4 +1,4 @@
 ### 搜索
-GET http://127.0.0.1:4000/search?q=钢铁侠
+GET https://srt.j-c-leng.workers.dev/search?q=钢铁侠
 ### 获取srt
-GET http://127.0.0.1:4000/download/646852.srt
+GET https://srt.j-c-leng.workers.dev/download/692356.srt
